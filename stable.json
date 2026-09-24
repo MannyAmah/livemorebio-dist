@@ -1,8 +1,8 @@
 {
-  "archive": "livemorebio-a21de887f053fb806e765bec2a796456832b399d.tar.gz",
+  "archive": "livemorebio-1c6ff5e458ecbe35da6155f8015135b1a135a858.tar.gz",
   "audience": "public",
   "channel": "stable",
-  "commit": "a21de887f053fb806e765bec2a796456832b399d",
+  "commit": "1c6ff5e458ecbe35da6155f8015135b1a135a858",
   "schema": "livemore.release-channel.v1",
-  "sha256": "9e23f4d4fb3816b848f124d6572df067f956e7a3e6338f33d9517830156f1f92"
+  "sha256": "576fd631a9dfae29b3da35d898532020014cab50eb873b558d5d5d6fbe51f6f9"
 }
