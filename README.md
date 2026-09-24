@@ -13,17 +13,19 @@ software says so on every result.
 
 **Required:** Python 3.11, and `curl` (already present on macOS and most Linux).
 
-**Recommended:** Node.js 20+ and Playwright — they enable the browser-based
-console diagnostics and about 950 additional verification tests. Without them
-LivemoreBio skips those checks and everything else works unchanged.
+**Recommended:** a C compiler with SUNDIALS (the cardiac engine compiles CVODE
+at run time), plus Node.js 20+ and Playwright (browser-based console
+diagnostics and ~950 additional verification tests). Without any of these
+LivemoreBio still installs and runs — the affected engine reports what is
+missing and its checks skip.
 
 ```bash
 # macOS
-brew install python@3.11 node
+brew install python@3.11 node sundials
 npm install -g playwright && npx playwright install chromium
 
 # Ubuntu / Debian
-sudo apt update && sudo apt install -y python3.11 python3.11-venv curl
+sudo apt update && sudo apt install -y python3.11 python3.11-venv curl build-essential libsundials-dev
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs
 npm install -g playwright && npx playwright install chromium
 ```

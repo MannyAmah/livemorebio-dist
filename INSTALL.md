@@ -95,6 +95,7 @@ with the browser-based diagnostics skipped.
 |---|---|---|
 | **Python 3.11** | everything | **required** |
 | **curl** | downloading the release | **required** (preinstalled on macOS and most Linux) |
+| **C compiler + SUNDIALS** | the cardiac electrophysiology engine (Myokit/CVODE) | recommended |
 | **Node.js 20+** | console diagnostics, the anatomy/atlas viewer checks, ~950 verification tests | recommended |
 | **Playwright** | browser-driven checks of the console | recommended |
 
@@ -116,6 +117,28 @@ sudo apt update && sudo apt install -y python3.11 python3.11-venv
 # Fedora / RHEL
 sudo dnf install -y python3.11
 ```
+
+#### C compiler and SUNDIALS
+
+The cardiac engine hosts the O'Hara-Rudy myocyte through Myokit, which compiles
+C against SUNDIALS (CVODE) at run time. Neither is a Python package, so neither
+can be installed by the installer.
+
+```bash
+# macOS — the compiler comes with the Xcode command line tools
+xcode-select --install 2>/dev/null || true
+brew install sundials
+
+# Ubuntu / Debian
+sudo apt install -y build-essential libsundials-dev
+
+# Fedora / RHEL
+sudo dnf install -y gcc gcc-c++ make sundials-devel
+```
+
+Without these, LivemoreBio installs and runs; the cardiac engine reports
+`CARDIAC_TOOLCHAIN_UNAVAILABLE` and names what to install, and its tests skip
+rather than failing the installation.
 
 #### Node.js 20 or newer
 
