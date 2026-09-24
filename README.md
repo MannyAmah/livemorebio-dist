@@ -11,7 +11,26 @@ software says so on every result.
 
 ## Install
 
-You need **Python 3.11**. Nothing else — no account, no `git`, no Node.js.
+**Required:** Python 3.11, and `curl` (already present on macOS and most Linux).
+
+**Recommended:** Node.js 20+ and Playwright — they enable the browser-based
+console diagnostics and about 950 additional verification tests. Without them
+LivemoreBio skips those checks and everything else works unchanged.
+
+```bash
+# macOS
+brew install python@3.11 node
+npm install -g playwright && npx playwright install chromium
+
+# Ubuntu / Debian
+sudo apt update && sudo apt install -y python3.11 python3.11-venv curl
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs
+npm install -g playwright && npx playwright install chromium
+```
+
+No GitHub account, no `git`, no login.
+
+### Then install LivemoreBio
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/main/install.sh | bash

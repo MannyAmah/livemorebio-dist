@@ -3,8 +3,9 @@
 A guide for evaluating LivemoreBio on your own computer. It takes about
 15 minutes, most of which is unattended.
 
-Everything in this guide was run end to end on macOS, from a clean install on
-an empty home directory. The sample outputs are real, not illustrations.
+Everything in this guide was run end to end on macOS on 2026-09-23, from a
+clean install on an empty home directory. The sample outputs are real, not
+illustrations.
 
 ---
 
@@ -84,20 +85,88 @@ Then open <http://127.0.0.1:8850> in your browser.
 
 ## 3. Path B — Native install (macOS, Linux, WSL2)
 
-**You need one thing:** **Python 3.11**.
+### What to install first
+
+Two required, two recommended. Install all four and every part of the product
+is available to you; install only the required two and the science still runs,
+with the browser-based diagnostics skipped.
+
+| Tool | Needed for | Required? |
+|---|---|---|
+| **Python 3.11** | everything | **required** |
+| **curl** | downloading the release | **required** (preinstalled on macOS and most Linux) |
+| **Node.js 20+** | console diagnostics, the anatomy/atlas viewer checks, ~950 verification tests | recommended |
+| **Playwright** | browser-driven checks of the console | recommended |
+
+#### Python 3.11
 
 ```bash
 python3.11 --version     # must print 3.11.x
 ```
 
-If it does not: macOS `brew install python@3.11`; Ubuntu/Debian
-`sudo apt install python3.11 python3.11-venv`.
+If it does not:
 
-No GitHub account, no `git`, no login, no Node.js.
+```bash
+# macOS
+brew install python@3.11
 
-Node.js is optional. With it installed, the browser-console diagnostics run as
-well; without it they are skipped and everything else — the twins, the
-programs, the metabolic engine, the notebooks — works exactly the same.
+# Ubuntu / Debian
+sudo apt update && sudo apt install -y python3.11 python3.11-venv
+
+# Fedora / RHEL
+sudo dnf install -y python3.11
+```
+
+#### Node.js 20 or newer
+
+```bash
+node --version           # should print v20.x or newer
+```
+
+If it does not:
+
+```bash
+# macOS
+brew install node
+
+# Ubuntu / Debian
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Fedora / RHEL
+sudo dnf install -y nodejs
+
+# Any platform, without admin rights — via nvm
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+exec $SHELL -l && nvm install 20
+```
+
+#### Playwright
+
+Playwright drives a real browser for the console checks. Install it next to
+wherever you will run LivemoreBio from:
+
+```bash
+npm install playwright
+npx playwright install chromium
+```
+
+Then point LivemoreBio at it, and keep the setting in your shell profile:
+
+```bash
+export LIVEMORE_PLAYWRIGHT_MODULE="$PWD/node_modules/playwright/index.js"
+```
+
+If Node.js or Playwright is missing, LivemoreBio does not fail — it skips the
+checks that need them and tells you so. `livemore doctor` reports which tools
+it found.
+
+#### Docker (only for Path A)
+
+Only needed if you are on Windows, or prefer containers. Install Docker Desktop
+from <https://docs.docker.com/get-started/get-docker/>.
+
+You still need no GitHub account, no `git`, and no login for any of this.
 
 ### Install
 
@@ -323,7 +392,31 @@ you review is what the system actually produced.
 
 ---
 
-## 6. What to check if you are evaluating us
+## 6. What a new install can and cannot do yet
+
+A fresh workspace has a **reference preview** twin, not an admitted one. That
+is deliberate: admitting a twin is a governed step with consent and source
+class attached, not something an installer does for you.
+
+Works immediately:
+
+- all six programs, and their refusals
+- the genome-scale metabolic engine
+- in-silico assays (`assay metformin dose=1.0`)
+- the console, the notebooks, and every export
+
+Needs an admitted twin first (`twin admit <bundle.json>`, then
+`twin activate`):
+
+- continuous execution and the LIFE Patch closed loop
+
+Asked for these without one, the product refuses with
+`EXECUTION_SOURCE_REQUIRED` and tells you to create and activate a twin. That
+is the intended answer, not a failure.
+
+---
+
+## 7. What to check if you are evaluating us
 
 1. **Try to make it lie.** Ask for a dose nobody measured, a compound with no
    pharmacokinetic source, a twin with no admitted model. Every one should
@@ -339,7 +432,7 @@ you review is what the system actually produced.
 
 ---
 
-## 7. If something goes wrong
+## 8. If something goes wrong
 
 | What you see | What to do |
 |---|---|
@@ -360,7 +453,7 @@ Safe to send: it reports check outcomes, never your data.
 
 ---
 
-## 8. What this is, and what it is not
+## 9. What this is, and what it is not
 
 LivemoreBio is research infrastructure for precision medicine. It models human
 physiology from published sources and states exactly how far each result can be
