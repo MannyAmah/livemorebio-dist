@@ -1,0 +1,41 @@
+name: Capability request
+description: Ask for something Livemore Bio does not do yet.
+title: "Request: "
+labels: ["capability request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never enter or attach patient information, clinical notes, genotypes, logs or files from `~/.livemore`. Do not include secrets, tokens or keys.**
+        Describe your research task with synthetic examples. A request does not change what a release claims; every result keeps its evidence label.
+  - type: textarea
+    id: task
+    attributes:
+      label: Research task
+      description: What you are trying to do, using a synthetic example.
+    validations:
+      required: true
+  - type: textarea
+    id: limit
+    attributes:
+      label: Current limitation
+      description: The page, command or API route, and any fixed refusal code you saw.
+  - type: textarea
+    id: desired
+    attributes:
+      label: What you would like it to do
+      description: Include a small synthetic example of an acceptable result.
+    validations:
+      required: true
+  - type: input
+    id: release
+    attributes:
+      label: Release and platform
+      description: The version from `livemore --version` and your operating system.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I checked this request and anything attached. It contains no patient information, clinical notes, genotypes, logs, files from ~/.livemore or secrets.
+          required: true

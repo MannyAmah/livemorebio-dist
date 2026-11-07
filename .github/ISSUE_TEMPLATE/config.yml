@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Release values (check before installing)
+    url: https://livemorebiosciences.com/releases
+    about: The distribution commit and SHA-256 digests for each Livemore Bio release.
+  - name: Contact Livemore Biosciences privately
+    url: https://www.livemorebiosciences.com
+    about: For anything you cannot describe without private material, use the website's Email us button instead of an issue.

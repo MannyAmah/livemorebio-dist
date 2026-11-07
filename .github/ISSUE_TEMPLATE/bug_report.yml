@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Livemore Bio did not work as documented.
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never enter or attach patient information, clinical notes, genotypes, logs or files from `~/.livemore`. Do not include secrets, tokens or keys.**
+        Use a small synthetic example you made for this report. Issues here are public. If you cannot describe the problem without private material, give only the feature name and contact us through the website instead.
+  - type: input
+    id: release
+    attributes:
+      label: Release
+      description: The version from `livemore --version`, for example LivemoreBio 0.1.0.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system, processor (Apple Silicon, Intel or AMD) and Python version.
+    validations:
+      required: true
+  - type: dropdown
+    id: route
+    attributes:
+      label: How you installed it
+      options:
+        - Public install guide (verified install block)
+        - Docker
+        - Private pinned release
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where it happened
+      description: The console page, command name or API route. Leave out tokens, identifiers and local paths.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: In your own words, with a synthetic example. Do not paste logs or private files.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the fixed error or reason code if one appeared (for example CARDIAC_TOOLCHAIN_UNAVAILABLE).
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I checked this report and anything attached. It contains no patient information, clinical notes, genotypes, logs, files from ~/.livemore or secrets.
+          required: true
