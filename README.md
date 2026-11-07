@@ -9,7 +9,7 @@ Individualized digital twins, a measurement plane and an experiment lab, run fro
 
 <br>
 
-[![Release](https://img.shields.io/badge/stable-6588707-214379?style=flat-square)](stable.json)
+[![Release](https://img.shields.io/badge/stable-channel-214379?style=flat-square)](stable.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1B7BB7?style=flat-square)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-19B9F3?style=flat-square&logo=python&logoColor=white)](#requirements)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Docker-214379?style=flat-square)](#installation)
@@ -118,7 +118,7 @@ This release is the working foundation for that mission, not the finished replic
 | Principle | What it means in practice |
 |---|---|
 | **Individual by construction** | Each twin keeps its own parameters and their sources. Cohorts are frozen sets of distinct synthetic member profiles, not one template with noise added to the outcome. |
-| **Mechanistic and interpretable** | The engines are published models where they exist: Bergman glucose–insulin ODEs, the Hovorka insulin model, O'Hara–Rudy CiPA 2017 electrophysiology and Human-GEM. In-house or heuristic components, such as metformin's pharmacodynamic gains and the metabolic→cardiac coupling, are labelled as research assumptions. Every output can be traced back to its mechanism. |
+| **Mechanistic and interpretable** | The engines use published models where they exist: the Hovorka insulin model, O'Hara–Rudy CiPA 2017 electrophysiology and Human-GEM. The glucose–insulin engine extends the published Bergman minimal model with an added secretion loop and oral-glucose absorption; its parameters are illustrative assumed priors, not clinically validated or cohort-fitted. In-house or heuristic components, such as metformin's pharmacodynamic gains and the metabolic→cardiac coupling, are labelled as research assumptions. Every output can be traced back to its mechanism. |
 | **Refuses instead of inventing** | Ask a question the evidence cannot answer and you get a typed refusal that names the missing measurement, not a plausible-looking number. |
 | **Evidence travels with every number** | Every result carries its evidence and qualification state and its controls. Depending on the protocol, it also carries applicability, allowed and prohibited claims, and the pinned source and solver behind it. |
 | **Infrastructure, not a web app** | Three services run from the terminal. The browser console, Python SDK, REST API and Jupyter all see the same twin, cohort, device and evidence identities. |
@@ -216,7 +216,7 @@ The three services find each other through a shared registry (`~/.livemore/regis
 
 ## Screenshots
 
-These were all captured from a clean install of this release (`6588707`), by running the workflows shown.
+These historical screenshots were captured from release `6588707`. They illustrate the interface; verify the installed release with its own tests.
 
 <table>
 <tr>
@@ -291,17 +291,60 @@ npm install -g playwright@1.58.2 && npx playwright install chromium
 
 # Ubuntu / Debian (on Ubuntu 24.04, python3.11 comes from the deadsnakes PPA)
 sudo apt update && sudo apt install -y python3.11 python3.11-venv curl build-essential libsundials-dev
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs
+sudo apt install -y nodejs  # use the distribution package when it provides Node.js 20+
 sudo npm install -g playwright@1.58.2 && npx playwright install chromium
 
 # Fedora / RHEL
 sudo dnf install -y python3.11 gcc gcc-c++ make sundials-devel nodejs
 ```
 
+If the distribution provides an older Node.js, use the official [Node.js downloads](https://nodejs.org/en/download) and its release verification instructions.
+
 ### Native install (macOS, Linux, WSL2)
 
+At each release go, the author publishes the installer SHA-256, archive SHA-256
+and distribution commit on both a release in the **Livemore-Biosciences
+organisation on GitHub** and a page on **livemorebiosciences.com**. These channels
+must be independently administered from the GitHub account that owns the
+download repository. Users may check either channel; the installer and archive
+digests must match on both, as must the distribution commit. Stop if they differ.
+
+The author fills the five placeholders below at the go in externally served
+guides and the weekly workflow. For a bundled guide, replace the placeholders
+with the published URLs and values before installation. Confirm the release
+values against either channel before running this block. Do not take the expected
+digests from the installer, archive or `stable.json` on the download host.
+Unfilled placeholders, download failures and checksum mismatches stop before
+the installer runs. L0 uses these digests without release signing (F-06).
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/main/install.sh | bash
+(
+  set -euo pipefail
+  org_release_url='{ORG_RELEASE_URL}'
+  livemorebiosciences_url='{LIVEMOREBIOSCIENCES_URL}'
+  installer_sha256='{INSTALLER_SHA256}'
+  archive_sha256='{ARCHIVE_SHA256}'
+  dist_commit='{DIST_COMMIT}'
+  [[ $org_release_url == https://github.com/Livemore-Biosciences/*/releases/* && $org_release_url != *'{'* && $org_release_url != *'}'* ]] || { printf '%s\n' 'Set the Livemore-Biosciences GitHub release URL.' >&2; exit 1; }
+  [[ $livemorebiosciences_url == https://livemorebiosciences.com/* && $livemorebiosciences_url != *'{'* && $livemorebiosciences_url != *'}'* ]] || { printf '%s\n' 'Set the livemorebiosciences.com release page URL.' >&2; exit 1; }
+  [[ $installer_sha256 =~ ^[0-9a-fA-F]{64}$ && $archive_sha256 =~ ^[0-9a-fA-F]{64}$ ]] || { printf '%s\n' 'Set both published SHA-256 digests.' >&2; exit 1; }
+  [[ $dist_commit =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'Set the published distribution commit.' >&2; exit 1; }
+  archive_sha256=$(printf '%s' "$archive_sha256" | tr 'A-F' 'a-f') || exit $?
+  installer_file=$(mktemp) || exit $?
+  trap 'rm -f "$installer_file"' EXIT
+  curl -fsSL --connect-timeout 15 --max-time 120 --retry 3 \
+    "https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/$dist_commit/install.sh" >"$installer_file" || exit $?
+  test -s "$installer_file" || { printf '%s\n' 'Empty installer; refusing execution.' >&2; exit 1; }
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum < "$installer_file") || exit $?
+  else
+    actual=$(shasum -a 256 < "$installer_file") || exit $?
+  fi
+  actual=${actual%% *}
+  expected=$(printf '%s' "$installer_sha256" | tr 'A-F' 'a-f') || exit $?
+  [[ $actual == "$expected" ]] || { printf '%s\n' 'Installer checksum mismatch; refusing execution.' >&2; exit 1; }
+  LIVEMORE_SHA256="$archive_sha256" bash "$installer_file"
+)
 ```
 
 The installer:
@@ -314,35 +357,74 @@ The installer:
 
 If any step fails, it stops, names the step and leaves your previous install untouched. It never half-installs. Expect several minutes, mostly for the verification suite.
 
-**Pin the exact build.** If you were sent a checksum, pin it. The install then refuses anything that is not bit-for-bit the published archive:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/main/install.sh \
-  | LIVEMORE_SHA256=<the checksum we sent you> bash
-```
-
-The current channel manifest is [`stable.json`](stable.json). Get the checksum you pin from us through a separate channel (your contract, an email or the data room), not from this repository.
-
 If `livemore` is not found afterwards, open a new terminal or add `~/.local/bin` to your `PATH`.
 
 ### Docker (Windows and every other OS)
 
 Windows is **refused natively, on purpose**. Livemore Bio protects local health-like data with owner-only POSIX file permissions, which Windows cannot express. Docker runs the same three services in containers:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/main/livemorebio-stable.tar.gz | tar -xz
-cd livemorebio-*/
+Ask the release author for the expected SHA-256 through a separately verified
+channel. Set `LIVEMORE_SHA256` to that independently supplied 64-character digest
+(`export LIVEMORE_SHA256='...'` in Bash, `$env:LIVEMORE_SHA256 = '...'` in
+PowerShell). Do not derive it from the archive or a checksum served by the
+same download origin. Start in a new empty directory; stop if verification
+fails. A matching checksum binds the archive to your chosen digest; it does
+not authenticate the download instructions or establish a signing identity.
 
-# three secrets that stay on your machine
+```bash
+(
+  set -euo pipefail
+  : "${LIVEMORE_SHA256:?Set LIVEMORE_SHA256 to the independently supplied release digest.}"
+  [[ $LIVEMORE_SHA256 =~ ^[0-9a-fA-F]{64}$ ]] || { printf '%s\n' 'Invalid release digest.' >&2; exit 1; }
+  archive=livemorebio-stable.tar.gz
+  curl -fsSL https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/main/livemorebio-stable.tar.gz -o "$archive" || exit $?
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum < "$archive") || exit $?
+  else
+    actual=$(shasum -a 256 < "$archive") || exit $?
+  fi
+  expected=$(printf '%s' "$LIVEMORE_SHA256" | tr 'A-F' 'a-f') || exit $?
+  [[ ${actual%% *} == "$expected" ]] || { printf '%s\n' 'Archive checksum mismatch; refusing extraction.' >&2; exit 1; }
+  tar -xzf "$archive" || exit $?
+) && cd livemorebio-*/
+```
+
+After successful verification and extraction:
+
+```bash
+# four independent secrets that stay on your machine
 export LIVEMORE_API_TOKEN=$(openssl rand -hex 32)
 export LIVEMORE_PATCH_STORAGE_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
 export LIVEMORE_PATCH_ADMISSION_HMAC_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
+export LIVEMORE_SERVICE_IDENTITY_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
 
 docker compose up -d
 curl -fsS http://127.0.0.1:8850/health      # then open http://127.0.0.1:8850
 ```
 
-PowerShell equivalents are in [INSTALL.md § Path A](INSTALL.md#2-path-a--docker-works-on-every-operating-system). To stop, run `docker compose down`. Add `-v` to also erase stored data.
+On Windows, download and extract the archive as described in
+[INSTALL.md § Path A](INSTALL.md#2-path-a--docker-works-on-every-operating-system),
+then provision the four secrets in PowerShell before `docker compose up -d`:
+
+```powershell
+function New-LivemoreKey {
+    $bytes = New-Object byte[] 32
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    [Convert]::ToBase64String($bytes).Replace('+','-').Replace('/','_')
+}
+$env:LIVEMORE_API_TOKEN = New-LivemoreKey
+$env:LIVEMORE_PATCH_STORAGE_KEY = New-LivemoreKey
+$env:LIVEMORE_PATCH_ADMISSION_HMAC_KEY = New-LivemoreKey
+$env:LIVEMORE_SERVICE_IDENTITY_KEY = New-LivemoreKey
+```
+
+The identity key uses canonical padded URL-safe base64 for exactly 32 random
+bytes, without whitespace or a newline in the environment. Hex is not admitted
+for this key. Preserve all four values privately for later restarts of this stack.
+The extracted release's `docs/LAUNCH_GUIDE.md` explains identity rotation.
+
+To stop, run `docker compose down`. Add `-v` to also erase stored data.
 
 > [!NOTE]
 > The image is built from the same hash-locked dependency set as the native installer, and the build runs the full test suite. If a scientific kernel cannot compile or a test fails, the build fails instead of producing an image without its engines. The image does not pre-install the Human-GEM reference model.
@@ -351,9 +433,35 @@ PowerShell equivalents are in [INSTALL.md § Path A](INSTALL.md#2-path-a--docker
 
 For contributors who want an editable environment instead of the managed installer. This path **skips the installer's test gate**, so run the suite yourself.
 
+Ask the release author for the expected SHA-256 through a separately verified
+channel. Set `LIVEMORE_SHA256` to that independently supplied 64-character digest
+(`export LIVEMORE_SHA256='...'` in Bash, `$env:LIVEMORE_SHA256 = '...'` in
+PowerShell). Do not derive it from the archive or a checksum served by the
+same download origin. Start in a new empty directory; stop if verification
+fails. A matching checksum binds the archive to your chosen digest; it does
+not authenticate the download instructions or establish a signing identity.
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/main/livemorebio-stable.tar.gz | tar -xz
-cd livemorebio-*/
+(
+  set -euo pipefail
+  : "${LIVEMORE_SHA256:?Set LIVEMORE_SHA256 to the independently supplied release digest.}"
+  [[ $LIVEMORE_SHA256 =~ ^[0-9a-fA-F]{64}$ ]] || { printf '%s\n' 'Invalid release digest.' >&2; exit 1; }
+  archive=livemorebio-stable.tar.gz
+  curl -fsSL https://raw.githubusercontent.com/MannyAmah/livemorebio-dist/main/livemorebio-stable.tar.gz -o "$archive" || exit $?
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum < "$archive") || exit $?
+  else
+    actual=$(shasum -a 256 < "$archive") || exit $?
+  fi
+  expected=$(printf '%s' "$LIVEMORE_SHA256" | tr 'A-F' 'a-f') || exit $?
+  [[ ${actual%% *} == "$expected" ]] || { printf '%s\n' 'Archive checksum mismatch; refusing extraction.' >&2; exit 1; }
+  tar -xzf "$archive" || exit $?
+) && cd livemorebio-*/
+```
+
+After successful verification and extraction:
+
+```bash
 python3.11 -m venv .venv
 ./.venv/bin/python -m pip install --require-hashes -r requirements-python311.lock
 ./.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
@@ -376,11 +484,11 @@ livemore programs list   # what can and cannot run, and why
 ```text
   LivemoreBio infrastructure
   ----------------------------------------------------
-  ● up   LIFE    :8851   20 diseases · 172 risk loci
+  ● up   LIFE    :8851   20 diseases · 309 associated genes
   ● up   Aegle   :8850   twin:
   ● up   Cendos  :8852   in-silico assays ready
   ----------------------------------------------------
-  registry: /home/you/.livemore/registry.json  (3 registered)
+  registry: <data-directory>/registry.json  (3 registered)
 ```
 
 A fresh workspace starts with an unregistered **healthy reference preview**, not an admitted twin. Admitting a twin is a governed step with consent and a source class attached, and the installer does not do it for you. To create one, open **Twins** in the console and select **Create admitted twin**, then **Activate numerical model**. From `livemore attach`, run `twin admit <bundle.json>`, then `twin activate <twin-id> version=<n>`. Continuous execution and the LIFE Patch loop need an active twin. Without one, the product refuses with `EXECUTION_SOURCE_REQUIRED` and tells you what to do.
@@ -457,22 +565,29 @@ run["evidence_state"], run["qualification_state"]   # ('MODELED_ONLY', 'NOT_QUAL
 
 ### REST API
 
-Mutation routes need the local bearer token. Get it with `livemore token`.
+Run these examples from the extracted release directory with the Python
+environment used for LivemoreBio. The helper proves the peer before sending
+credentials and reads the existing token and identity configuration. The
+example payloads are technical computational inputs, not physical measurements.
 
 ```bash
-auth="Authorization: Bearer $(livemore token)"
-
 # the six programs and their executability
-curl -fsS -H "$auth" http://127.0.0.1:8850/api/cendos/programs
+python3 tools/stack_request.py --role aegle --method GET \
+  --url http://127.0.0.1:8850/api/cendos/programs --expect-status 200
 
 # paired exogenous-insulin arms
-curl -fsS -X POST -H "$auth" -H 'Content-Type: application/json' \
-  -d '{"cohort_size":8,"seed":1,"bolus_units":4,"meal_g":60}' \
-  http://127.0.0.1:8850/api/cendos/protocols/exogenous-insulin
+python3 tools/stack_request.py --role aegle --method POST \
+  --url http://127.0.0.1:8850/api/cendos/protocols/exogenous-insulin --expect-status 201 \
+  --json '{"cohort_size":8,"seed":1,"bolus_units":4,"meal_g":60}'
 
 # whole-human manifest
 curl -fsS http://127.0.0.1:8850/api/system-manifest
 ```
+
+For a container-only install, use `docker compose exec -T aegle python` in place
+of `python3`, and use `http://aegle:8850` as the URL origin. PowerShell users can
+supply the payload with `--json-file` from a UTF-8 file inside the container.
+The unauthenticated manifest request does not establish peer identity.
 
 ### Jupyter
 
@@ -494,8 +609,8 @@ Each program answers one narrow, pre-declared question. Each one reports its own
 | **LBHR-030** Greater burdock | arctigenin | ✅ margin computable | Modeled exposure against the measured active range. Exposure comes from published piglet pharmacokinetics scaled allometrically, so it is not admissible as human exposure |
 | **LBHR-135** Bilberry | cyanidin-3-glucoside | ✅ at the studied dose only | Measured human exposure exists only for 500 mg |
 | **LBHR-172** Lion's mane | erinacine A | ⚠️ exposure only | Active range not admitted |
-| **LBHR-129** Yerba santa | sterubin | ⛔ blocked, reason named | No admitted pharmacokinetic source |
-| **LBHR-062** Rosemary | carnosic acid | ⛔ blocked, reason named | No admitted pharmacokinetic source |
+| **LBHR-129** Yerba santa | sterubin | ⛔ unavailable, reason named | No admitted pharmacokinetic source |
+| **LBHR-062** Rosemary | carnosic acid | ⛔ unavailable, reason named | No admitted pharmacokinetic source |
 
 **Validation status: 0 of 6 validated in vivo.** (`livemore programs list` reports "0 of 5" because it counts the five botanical programs.) Running a program is not validating it, and nothing here is dosing guidance. A purified compound is not treated as interchangeable with a plant extract, a different plant part or a metabolite mixture.
 
@@ -548,12 +663,14 @@ At 500 mg, the modeled unbound peak concentration reaches the measured active ra
 <summary><b>3. Genome-scale metabolism under restricted oxygen (Human-GEM 2.0)</b></summary>
 
 ```bash
-curl -fsS -X POST -H "Authorization: Bearer $(livemore token)" -H 'Content-Type: application/json' \
-  -d '{"conditions":[
-        {"condition_id":"normoxia","glucose_uptake":1.0,"oxygen_uptake":1.0},
-        {"condition_id":"hypoxia","glucose_uptake":1.0,"oxygen_uptake":0.15}]}' \
-  http://127.0.0.1:8852/protocols/human-gem-oxygen-capacity
+python3 tools/stack_request.py --role cendos --method POST \
+  --url http://127.0.0.1:8852/protocols/human-gem-oxygen-capacity --expect-status 201 \
+  --json '{"conditions":[{"condition_id":"normoxia","glucose_uptake":1.0,"oxygen_uptake":1.0},{"condition_id":"hypoxia","glucose_uptake":1.0,"oxygen_uptake":0.15}]}'
 ```
+
+These are technical computational inputs, not physical measurements. For a
+container-only install, use `docker compose exec -T cendos python` in place of
+`python3`, with `http://cendos:8852` as the URL origin.
 
 | Condition | ATP capacity (mmol/gDW/h) | Oxygen | Glucose | Mass-balance residual |
 |---|---:|---:|---:|---:|
@@ -605,7 +722,7 @@ With the same glucose, restricting oxygen lowers the network's maximum ATP-maint
 - **Browser sessions** authorize through a same-origin bootstrap and an `HttpOnly`, `SameSite=Strict` cookie.
 - **Owner-only data directory.** `~/.livemore` holds the API token and both patch keys, and is kept at mode `0700`. `livemore doctor` checks it. The product enforces 32 owner-only checks across the registry, execution and evidence stores, protocol runs, model assets, anatomy cache and patch journal.
 - **Encryption at rest.** Patch journals, bus events and snapshots are encrypted with an owner-only **AES-256-GCM** key generated at first start.
-- **Supply chain.** The native installer checks the release archive's SHA-256 before unpacking, installs hash-locked dependencies and verifies model assets byte for byte. The Docker image uses the same hash-locked dependencies and runs the test suite while it builds. The Docker and manual paths download the archive with `curl | tar`, so check it against `livemorebio-stable.tar.gz.sha256` yourself.
+- **Supply chain.** The native recipe verifies the installer against an independent second-channel SHA-256, then the installer checks the pinned release archive's SHA-256 before unpacking, installs hash-locked dependencies and verifies model assets byte for byte. The Docker image uses the same hash-locked dependencies and runs the test suite while it builds. The Docker and manual paths require an independently supplied SHA-256 and refuse extraction if verification fails. A checksum from the same download origin does not independently establish authenticity; L0 uses these digests without release signing, with code signing required before the hosted launches.
 - **Scope.** The platform is **not tenant-isolated** and **not approved for production PHI** or partner-confidential inputs. Do not load patient data into an evaluation install.
 
 ---
@@ -620,7 +737,7 @@ With the same glucose, restricting oxygen lowers the network's maximum ATP-maint
 | Genome-scale metabolism | Human-GEM 2.0 · COBRApy · GLPK (isolated worker) |
 | Knowledge | NetworkX property graph · TF-IDF retrieval · optional Neo4j export with explicit credentials |
 | Analysis | JupyterLab · pandas · Matplotlib · nbformat/nbclient |
-| Verification | pytest (about 6,500 tests shipped in the archive) · Node.js + Playwright console checks |
+| Verification | pytest (the release verification receipt records collected, passed, and skipped counts) · Node.js + Playwright console checks |
 | Packaging | Hash-locked requirements · checksum-verified release archive · Docker Compose |
 
 ---
@@ -661,6 +778,7 @@ This is the **distribution** repository: the installer, the published release, i
 | [`INSTALL.md`](INSTALL.md) | Full installation and usage guide |
 | [`docs/assets/`](docs/assets) | Images used in this README |
 | [`LICENSE`](LICENSE) | MIT license |
+| [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Third-party attribution and terms |
 
 ---
 
@@ -715,30 +833,55 @@ Livemore Bio is the company's core platform. Its programs include metabolic and 
   author    = {{Livemore Health \& Biosciences}},
   title     = {Livemore Bio: computational human-biology infrastructure},
   year      = {2026},
-  version   = {stable 658870775e581c044a8832fd107e4097f7a30959},
   url       = {https://github.com/MannyAmah/livemorebio-dist}
 }
 ```
 
+Add the installed commit recorded in `stable.json` to the citation.
 When you publish work derived from a run, also cite the underlying models listed below. Each run records its sources in its provenance.
 
 ## Acknowledgements and third-party sources
 
-Livemore Bio stands on openly published science and software. Each source keeps its own license and attribution terms:
+The complete [third-party notices](THIRD_PARTY_NOTICES.md) accompany the archive,
+wheel and container build. The MIT licence covers Livemore-authored work;
+scientific sources and dependencies retain their own terms.
 
-- **Human-GEM / Human2 v2.0.0**, SysBioChalmers ([CC BY 4.0](https://github.com/SysBioChalmers/Human-GEM)), pinned at commit `635f533`. Its `citation.cff` is retained with the installed model.
-- **O'Hara–Rudy human ventricular myocyte model, CiPA 2017 variant**, executed from its CellML source.
-- **Hovorka et al.**, *Physiol Meas* 2004;25:905–920, and **Wilinska et al.**, *J Diabetes Sci Technol* 2010;4(1):132–144, for the exogenous-insulin model.
-- **Bergman et al.**, *Am J Physiol* 1979 and *J Clin Invest* 1981, for the glucose–insulin minimal model.
-- **BodyParts3D**, © The Database Center for Life Science ([CC BY-SA 2.1 JP](https://lifesciencedb.jp/bp3d/?lng=en)), and the **Human Reference Atlas** for reference anatomy.
-- **NHANES 2021–2023** and the published **Diabetes Prevention Program** baseline (PMID 11092283) for population anchors.
-- **3Dmol.js**, **Myokit**, **SUNDIALS**, **COBRApy**, **GLPK**, **libRoadRunner**, **libSBML**, **libCellML**, **COPASI/BasiCO**, **FastAPI** and the scientific Python and Jupyter ecosystem.
+- The reference seed uses **Disease Ontology and HGNC (CC0)**, **Reactome data
+  (CC0)** and **Open Targets Platform association evidence (CC0)**. Open Targets'
+  upstream records also credit **ChEMBL (CC BY-SA 3.0)**, **EFO (Apache 2.0)**
+  and **Mondo (CC BY 4.0)**. Associations are not causal effects or individual
+  risk estimates. The seed records Open Targets release **26.09**, retrieval dates and the
+  read-only API query for each association and drug record.
+- **RCSB PDB** API/archive data are CC0. **Human Reference Atlas / HuBMAP** and
+  **Human Cell Atlas** retain their CC BY 4.0 attribution. **NHGRI-EBI GWAS
+  Catalog** association facts are under EMBL-EBI Terms of Use, distinct from
+  the CC0 terms for summary statistics. Exact inherited snapshot dates/releases
+  are unknown; the files were present by 2026-07-11.
+- **BodyParts3D**, © The Database Center for Life Science, is currently licensed
+  under **CC Attribution 4.0 International**, per the [publisher's licence
+  page](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html), checked
+  2026-10-04. The archive's historical **CC BY-SA 2.1 JP** notice is retained
+  separately. Geometry is acquired separately with attribution and provenance.
+- **O'Hara–Rudy CiPA v1.0 (2017)** retains the eleven-author credit, exposure,
+  changeset and CC BY 3.0 terms in the notices. The [PMR page](https://models.physiomeproject.org/e/5a0/ohara_rudy_cipa_v1_2017.cellml/license_citation)
+  has an unspecified per-work field **and** a repository-wide CC BY 3.0
+  statement (checked 2026-10-04). The separate FDA CiPA repository is GPL-3.0;
+  that licence is not attributed to the PMR CellML encoding. The notices credit
+  the encoding workspace owner, the 2011 base model and the 2017 modification.
+- **Human-GEM 2.0** (CC BY 4.0), Hovorka/Wilinska and Bergman model citations,
+  NHANES and DPP population anchors, Three.js, 3Dmol.js, Myokit, SUNDIALS,
+  COBRApy, GLPK, libRoadRunner, libSBML, libCellML, COPASI/BasiCO and the
+  scientific Python/Jupyter ecosystem retain their source-specific notices.
 
-Recon3D is not activated because of its non-commercial restrictions. KEGG and GeneCards stay behind entitlement gates and are never scraped.
+The catalog retains NAR and ELIXIR factual names, IDs and URLs. Publisher
+**descriptions and data-type text are not distributed**. KEGG-derived seed
+content and Human Protein Atlas enrichment have been removed; the old Orphanet
+seed source claim is no longer made. Search therefore has reduced annotation
+coverage. Commercially restricted optional connectors remain licence-gated.
 
 ## License
 
-Livemore Bio is released under the [MIT License](LICENSE), copyright © 2026 Livemore Health & Biosciences, Inc. Third-party models, datasets and anatomy assets keep their own licenses, as listed above.
+Livemore Bio is released under the [MIT License](LICENSE), copyright © 2026 Livemore Health & Biosciences, Inc. Third-party models, datasets, anatomy assets and dependencies keep their own licences; retain [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) with every distribution.
 
 <div align="center">
 <br>

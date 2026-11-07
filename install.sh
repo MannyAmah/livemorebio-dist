@@ -7,6 +7,9 @@ umask 077
 
 readonly REPOSITORY="MannyAmah/livemorebio"
 readonly REQUESTED_REF="${LIVEMORE_REF-}"
+# Release gates can install locally built bytes without a distribution server.
+# The same checksum and full install/verification path still apply.
+readonly LOCAL_ARCHIVE="${LIVEMORE_ARCHIVE-}"
 # A published release needs no GitHub account: the archive and its checksum are
 # fetched over plain HTTPS. LIVEMORE_REF selects a repository ref instead, which
 # is the private path and does require an authorised GitHub CLI.
@@ -23,7 +26,11 @@ readonly RETRY_BACKOFF_SECONDS
 readonly HOME_DIRECTORY="${HOME-}"
 readonly INSTALL_BASE="${LIVEMORE_INSTALL_DIR-${HOME_DIRECTORY}/.local/share/livemorebio}"
 readonly BIN_DIRECTORY="${LIVEMORE_BIN_DIR-${HOME_DIRECTORY}/.local/bin}"
-readonly INSTALL_MODELS="${LIVEMORE_INSTALL_MODELS-human-gem}"
+readonly INSTALL_MODELS="${LIVEMORE_INSTALL_MODELS-human-gem,cardiac}"
+INSTALL_HUMAN_GEM=0
+INSTALL_CARDIAC=0
+CARDIAC_TEST_MODE=0
+readonly CARDIAC_MODEL_RELATIVE="models/cardiac/ohara_rudy_cipa_2017.cellml"
 readonly PATH_MARKER_BEGIN="# >>> LivemoreBio PATH >>>"
 readonly PATH_MARKER_END="# <<< LivemoreBio PATH <<<"
 
@@ -44,6 +51,8 @@ validate_dist_base() {
 CURRENT_PHASE="preflight"
 RELEASE_DIRECTORY=""
 OWNED_RELEASE_DIRECTORY=""
+MODEL_STAGE_DIRECTORY=""
+MODEL_SOURCE_DIRECTORY=""
 LOCK_DIRECTORY=""
 LOCK_HELD=0
 PATH_GUIDANCE=""
@@ -59,6 +68,12 @@ fail() {
 
 cleanup() {
     local exit_code=$?
+    if [[ -n "$MODEL_STAGE_DIRECTORY" && -d "$MODEL_STAGE_DIRECTORY" ]]; then
+        case "$MODEL_STAGE_DIRECTORY" in
+            "$INSTALL_BASE"/releases/.*.models.*) rm -rf -- "$MODEL_STAGE_DIRECTORY" ;;
+            *) printf '[LivemoreBio] WARNING: refusing unexpected model-stage cleanup.\n' >&2 ;;
+        esac
+    fi
     if [[ -n "$OWNED_RELEASE_DIRECTORY" && -d "$OWNED_RELEASE_DIRECTORY" ]]; then
         case "$OWNED_RELEASE_DIRECTORY" in
             "$INSTALL_BASE"/releases/*)
@@ -269,20 +284,167 @@ configure_interactive_path() {
     PATH_GUIDANCE="Open a new terminal so $profile is loaded."
 }
 
+validate_model_selection() {
+    local accepted="LIVEMORE_INSTALL_MODELS must be a comma/space-separated set of human-gem and cardiac (default: human-gem,cardiac), or none alone (explicit base-only installation)."
+    local selection=""
+    local IFS=$' ,\t'
+    local -a selections
+    case "$INSTALL_MODELS" in
+        ""|*$'\n'*|*$'\r'*) fail "$accepted" ;;
+    esac
+    read -r -a selections <<< "$INSTALL_MODELS"
+    [[ ${#selections[@]} -gt 0 ]] || fail "$accepted"
+    for selection in "${selections[@]}"; do
+        case "$selection" in
+            human-gem) INSTALL_HUMAN_GEM=1 ;;
+            cardiac) INSTALL_CARDIAC=1 ;;
+            none) [[ ${#selections[@]} -eq 1 ]] || fail "$accepted" ;;
+            *) fail "$accepted" ;;
+        esac
+    done
+}
+
 install_reference_models() {
-    if [[ "$INSTALL_MODELS" == "none" ]]; then
-        info "Base-only installation requested: genome-scale execution is unavailable until Human-GEM is installed."
+    CARDIAC_TEST_MODE="$INSTALL_CARDIAC"
+    # L0-R2 requires every retained installed asset's numerical tests.
+    local cardiac_path="$MODEL_SOURCE_DIRECTORY/$CARDIAC_MODEL_RELATIVE"
+    if [[ -e "$cardiac_path" || -L "$cardiac_path" ]]; then
+        CARDIAC_TEST_MODE=1
+    fi
+    if [[ "$INSTALL_HUMAN_GEM" -eq 0 && "$INSTALL_CARDIAC" -eq 0 ]]; then
+        info "No model acquisition requested (base-only choice LIVEMORE_INSTALL_MODELS=none); any retained cardiac asset remains subject to verification."
         return
     fi
-    CURRENT_PHASE="pinned Human-GEM asset verification"
-    info "Installing/verifying pinned Human-GEM v2.0.0 and attribution (about 46 MB, private cache)..."
-    "$RELEASE_DIRECTORY/source/.venv/bin/python" -I -B -m livemorebio.model_assets install human-gem
+    if [[ "$INSTALL_CARDIAC" -eq 1 ]]; then
+        CURRENT_PHASE="pinned cardiac asset verification"
+        info "Installing/verifying pinned cardiac CellML and attribution..."
+        if ! "$MODEL_SOURCE_DIRECTORY/.venv/bin/python" -I -B -m livemorebio.model_assets install cardiac; then
+            # L0-R2: a requested pinned asset is mandatory before activation.
+            fail "CARDIAC_MODEL_UNAVAILABLE: cardiac (O'Hara-Rudy CiPA 2017) acquisition failed. Source: https://models.physiomeproject.org/workspace/4e4/rawfile/2c2629a8e2b60c2cde677903e03c9c9be3f39a00/ohara_rudy_cipa_v1_2017.cellml ; pinned SHA-256: ed127e6737611eb1469ea32db0b9d102f0780fc286a29ca88d11d8a868a94175 . Retry, or explicitly choose LIVEMORE_INSTALL_MODELS=none for a base-only installation."
+        fi
+    fi
+    if [[ "$INSTALL_HUMAN_GEM" -eq 1 ]]; then
+        CURRENT_PHASE="pinned Human-GEM asset verification"
+        info "Installing/verifying pinned Human-GEM v2.0.0 and attribution (about 46 MB, private cache)..."
+        "$MODEL_SOURCE_DIRECTORY/.venv/bin/python" -I -B -m livemorebio.model_assets install human-gem
+    fi
+}
+
+stage_reused_cardiac_upgrade() {
+    local original_source="$RELEASE_DIRECTORY/source"
+    local cardiac_path="$original_source/$CARDIAC_MODEL_RELATIVE"
+    if [[ "$INSTALL_CARDIAC" -ne 1 || -e "$cardiac_path" || -L "$cardiac_path" ]]; then
+        return
+    fi
+    # An active base-only release must never expose the acquired file until
+    # the complete asset-enabled gate has passed in detached source.
+    [[ ! -L "$original_source/.venv" ]] || fail "Cannot stage a release with a symlinked Python environment."
+    MODEL_STAGE_DIRECTORY=$(mktemp -d "$INSTALL_BASE/releases/.$COMMIT.models.XXXXXX")
+    MODEL_SOURCE_DIRECTORY="$MODEL_STAGE_DIRECTORY/source"
+    CURRENT_PHASE="detached cardiac upgrade preparation"
+    "$PYTHON" -I -B - "$original_source" "$MODEL_SOURCE_DIRECTORY" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+
+shutil.copytree(Path(sys.argv[1]), Path(sys.argv[2]), symlinks=True)
+PY
+    # Reinstall into the COPY of the venv so isolated children resolve staged
+    # source too. A parent-only sys.path override would leave those children
+    # importing the active editable checkout. No dependency is resolved here.
+    "$MODEL_SOURCE_DIRECTORY/.venv/bin/python" -I -B -m pip install \
+        --disable-pip-version-check --no-index --no-deps --no-build-isolation \
+        -e "$MODEL_SOURCE_DIRECTORY"
+}
+
+publish_staged_cardiac_upgrade() {
+    [[ -n "$MODEL_STAGE_DIRECTORY" ]] || return 0
+    [[ "$(compute_release_digest)" == "$expected_digest" ]] || \
+        fail "The original release changed during detached verification; refusing cardiac publication."
+    CURRENT_PHASE="verified cardiac asset publication"
+    "$PYTHON" -I -B - "$MODEL_SOURCE_DIRECTORY/$CARDIAC_MODEL_RELATIVE" \
+        "$RELEASE_DIRECTORY/source/$CARDIAC_MODEL_RELATIVE" "$RELEASE_DIRECTORY/source" <<'PY'
+import hashlib
+import importlib.util
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
+
+source, destination, original_source = map(Path, sys.argv[1:])
+# The original source just passed its recorded full-tree digest. Its manifest
+# is authoritative even if a staged payload changed after numerical testing.
+spec = importlib.util.spec_from_file_location(
+    "livemore_installer_publication_manifest", original_source / "livemorebio" / "model_assets.py"
+)
+if spec is None or spec.loader is None:
+    raise ValueError("Pinned cardiac publication manifest is unavailable.")
+manifest_module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = manifest_module
+spec.loader.exec_module(manifest_module)
+asset = manifest_module.asset_manifest("cardiac")["assets"]["cellml"]
+if source.name != asset["filename"] or destination.name != asset["filename"]:
+    raise ValueError("Pinned cardiac publication filename differs.")
+created = []
+temporary = []
+try:
+    entries = []
+    for name in (source.name + ".attribution.json", ".install.lock", source.name):
+        candidate = source.parent / name
+        descriptor = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+                raise ValueError("Staged cardiac entry is not a regular owned file.")
+            payload = handle.read(1_048_577)
+        if len(payload) > 1_048_576:
+            raise ValueError("Staged cardiac entry exceeds its publication bound.")
+        if name == source.name and (len(payload) != asset["size_bytes"] or hashlib.sha256(payload).hexdigest() != asset["sha256"]):
+            raise ValueError("CARDIAC_MODEL_HASH_MISMATCH: staged cardiac publication differs from the pinned bytes.")
+        entries.append((name, payload))
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if destination.parent.is_symlink():
+        raise ValueError("Cardiac destination directory must not be a symlink.")
+    for name, payload in entries:
+        target = destination.parent / name
+        if target.exists() or target.is_symlink():
+            descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(descriptor, "rb") as handle:
+                info = os.fstat(handle.fileno())
+                if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid()
+                        or handle.read(1_048_577) != payload):
+                    raise ValueError("Existing cardiac entry differs; replacement is refused.")
+            continue
+        descriptor, temporary_name = tempfile.mkstemp(prefix=".cardiac-publication-", dir=destination.parent)
+        staged = Path(temporary_name)
+        temporary.append(staged)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(staged, target, follow_symlinks=False)
+        created.append(target)
+        staged.unlink()
+        temporary.remove(staged)
+except BaseException:
+    for path in reversed(created):
+        path.unlink()
+    raise
+finally:
+    for path in temporary:
+        path.unlink()
+PY
+    # The staged source and copied venv are installer-owned scratch only.
+    rm -rf -- "$MODEL_STAGE_DIRECTORY"
+    MODEL_STAGE_DIRECTORY=""
+    MODEL_SOURCE_DIRECTORY="$RELEASE_DIRECTORY/source"
 }
 
 run_isolated_verification() {
-    local genome_test_mode="$1"
-    shift
-    LIVEMORE_TEST_GENOME_MODELS="$genome_test_mode" "$PYTHON" -I -B - "$RELEASE_DIRECTORY/source" "$@" <<'PY'
+    LIVEMORE_TEST_GENOME_MODELS="$INSTALL_HUMAN_GEM" \
+    LIVEMORE_TEST_CARDIAC="$CARDIAC_TEST_MODE" \
+    "$PYTHON" -I -B - "$MODEL_SOURCE_DIRECTORY" "$@" <<'PY'
 import importlib.util
 import os
 from pathlib import Path
@@ -314,6 +476,23 @@ helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
 verification_root, verification_env = helper.prepare_review_environment(None, inherited=os.environ)
 verification_env["LIVEMORE_MODEL_DIR"] = model_root
+# The suite owns its listeners and identities. Review-stack authorities describe
+# fixed operator ports and would reject the tests' independently chosen origins.
+for name in tuple(verification_env):
+    if name.startswith("LIVEMORE_SERVICE_IDENTITY_") or name in (
+        "LIVEMORE_AEGLE_URL", "LIVEMORE_LIFE_URL", "LIVEMORE_CENDOS_URL",
+        "LIVEMORE_AEGLE_IDENTITY_AUTHORITY", "LIVEMORE_LIFE_IDENTITY_AUTHORITY",
+        "LIVEMORE_CENDOS_IDENTITY_AUTHORITY",
+    ):
+        verification_env.pop(name)
+# The install gate must not inherit a caller's test selection or plugin injection.
+for pytest_setting in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
+    verification_env.pop(pytest_setting, None)
+# These two describe the container image to the suite, and are never true of an
+# install. Inherited from the caller's shell, the first is refused by the suite
+# in a tree that is not an image, and the second takes a tool away from it.
+for image_only in ("LIVEMORE_TEST_TREE", "LIVEMORE_TEST_ABSENT_TOOLS"):
+    verification_env.pop(image_only, None)
 print(f"[LivemoreBio] Private verification data retained at: {verification_root}", flush=True)
 completed = subprocess.run(
     [str(source / ".venv" / "bin" / "python"), "-I", "-B", "-X", "utf8", "-m", "pytest",
@@ -337,10 +516,15 @@ validate_dist_base "$DIST_BASE"
 if [[ -n "$PINNED_SHA256" && ! "$PINNED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
     fail "LIVEMORE_SHA256 must be 64 hexadecimal characters."
 fi
-case "$INSTALL_MODELS" in
-    human-gem|none) ;;
-    *) fail "LIVEMORE_INSTALL_MODELS must be human-gem (default) or none (explicit base-only installation)." ;;
-esac
+if [[ -n "$LOCAL_ARCHIVE" ]]; then
+    validate_absolute_path "LIVEMORE_ARCHIVE" "$LOCAL_ARCHIVE"
+    [[ -f "$LOCAL_ARCHIVE" && ! -L "$LOCAL_ARCHIVE" ]] || \
+        fail "LIVEMORE_ARCHIVE must name a regular file, not a symbolic link."
+    validate_commit "$REQUESTED_REF" || \
+        fail "LIVEMORE_ARCHIVE requires a full commit in LIVEMORE_REF."
+    [[ -n "$PINNED_SHA256" ]] || fail "LIVEMORE_ARCHIVE requires LIVEMORE_SHA256."
+fi
+validate_model_selection
 [[ "$INSTALL_BASE" != "/" && "$INSTALL_BASE" != "$HOME_DIRECTORY" ]] || \
     fail "LIVEMORE_INSTALL_DIR is too broad: $INSTALL_BASE"
 [[ "$BIN_DIRECTORY" != "/" && "$BIN_DIRECTORY" != "$HOME_DIRECTORY" ]] || \
@@ -351,7 +535,9 @@ if [[ -e "$INSTALL_BASE" && ! -d "$INSTALL_BASE" ]]; then
     fail "Install root exists but is not a directory: $INSTALL_BASE"
 fi
 
-require_command curl "curl is required to download the LivemoreBio release."
+if [[ -z "$LOCAL_ARCHIVE" ]]; then
+    require_command curl "curl is required to download the LivemoreBio release."
+fi
 require_command tar "tar is required to unpack the LivemoreBio release."
 require_command python3.11 "Python 3.11 is required. Install Python 3.11 and retry."
 PYTHON="$(command -v python3.11)"
@@ -361,7 +547,7 @@ readonly PYTHON_VERSION
 [[ "$PYTHON_VERSION" == "3.11" ]] || \
     fail "Python 3.11 is required; selected interpreter reported $PYTHON_VERSION."
 
-if [[ -n "$REQUESTED_REF" ]]; then
+if [[ -n "$REQUESTED_REF" && -z "$LOCAL_ARCHIVE" ]]; then
     require_command gh "Installing a repository ref needs the GitHub CLI. Install it from https://cli.github.com, or omit LIVEMORE_REF to install the published release."
     gh auth status >/dev/null 2>&1 || fail "GitHub authorization is required for LIVEMORE_REF. Run: gh auth login"
 fi
@@ -408,7 +594,10 @@ manifest_field() {
 }
 
 RELEASE_SHA256=""
-if [[ -n "$REQUESTED_REF" ]]; then
+if [[ -n "$LOCAL_ARCHIVE" ]]; then
+    SOURCE_ORIGIN="local archive $LOCAL_ARCHIVE"
+    COMMIT="$REQUESTED_REF"
+elif [[ -n "$REQUESTED_REF" ]]; then
     SOURCE_ORIGIN="repository ref $REQUESTED_REF"
     info "Resolving $REPOSITORY at $REQUESTED_REF..."
     COMMIT=$(gh api "repos/$REPOSITORY/commits/$REQUESTED_REF" --jq .sha)
@@ -439,6 +628,7 @@ readonly RELEASES_DIRECTORY="$INSTALL_BASE/releases"
 readonly INTEGRITY_DIRECTORY="$INSTALL_BASE/integrity"
 RELEASE_DIRECTORY="$RELEASES_DIRECTORY/$COMMIT"
 readonly RELEASE_DIRECTORY
+MODEL_SOURCE_DIRECTORY="$RELEASE_DIRECTORY/source"
 readonly INTEGRITY_PATH="$INTEGRITY_DIRECTORY/$COMMIT.sha256"
 
 mkdir -p "$INSTALL_BASE"
@@ -510,11 +700,24 @@ fi
 
 if [[ -d "$RELEASE_DIRECTORY" ]]; then
     info "Commit $COMMIT is already verified; repairing activation."
+    stage_reused_cardiac_upgrade
     install_reference_models
-    if [[ "$INSTALL_MODELS" != "none" ]]; then
+    if [[ "$CARDIAC_TEST_MODE" -eq 1 ]]; then
+        CURRENT_PHASE="pinned cardiac execution verification"
+        info "Running the complete release test suite before cardiac-capability activation..."
+        run_isolated_verification
+        publish_staged_cardiac_upgrade
+        # The cardiac acquisition is inside the release's fixed model path.
+        # Admit those bytes into its digest only after the full suite passes.
+        temporary_integrity="$INTEGRITY_DIRECTORY/.$COMMIT.$$"
+        [[ ! -e "$temporary_integrity" && ! -L "$temporary_integrity" ]] || \
+            fail "Temporary release integrity path already exists: $temporary_integrity"
+        compute_release_digest >"$temporary_integrity"
+        replace_path_atomically "$temporary_integrity" "$INTEGRITY_PATH"
+    elif [[ "$INSTALL_HUMAN_GEM" -eq 1 ]]; then
         CURRENT_PHASE="pinned Human-GEM execution verification"
         info "Checking numerical execution before full-capability activation..."
-        run_isolated_verification 1 livemorebio/tests/test_stoichiometry_integration.py
+        run_isolated_verification livemorebio/tests/test_stoichiometry_integration.py
     fi
 else
     CURRENT_PHASE="inactive release creation"
@@ -524,8 +727,10 @@ else
     readonly SOURCE_DIRECTORY="$RELEASE_DIRECTORY/source"
     mkdir -p "$SOURCE_DIRECTORY"
 
-    info "Downloading the source archive ($SOURCE_ORIGIN)..."
-    if [[ -n "$REQUESTED_REF" ]]; then
+    info "Acquiring the source archive ($SOURCE_ORIGIN)..."
+    if [[ -n "$LOCAL_ARCHIVE" ]]; then
+        cp "$LOCAL_ARCHIVE" "$ARCHIVE_PATH"
+    elif [[ -n "$REQUESTED_REF" ]]; then
         gh api "repos/$REPOSITORY/tarball/$COMMIT" >"$ARCHIVE_PATH"
     else
         curl -fsSL --proto '=https' --tlsv1.2 --max-time 900 \
@@ -583,9 +788,7 @@ print(h.hexdigest())' "$ARCHIVE_PATH")
 
     CURRENT_PHASE="test verification"
     info "Running the complete release test suite..."
-    genome_test_mode=0
-    [[ "$INSTALL_MODELS" == "none" ]] || genome_test_mode=1
-    run_isolated_verification "$genome_test_mode"
+    run_isolated_verification
 
     CURRENT_PHASE="compile verification"
     info "Compiling the LivemoreBio package..."
