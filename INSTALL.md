@@ -164,11 +164,11 @@ the installer runs. L0 uses these digests without release signing (F-06).
 ```bash
 (
   set -euo pipefail
-  org_release_url='{ORG_RELEASE_URL}'
-  livemorebiosciences_url='{LIVEMOREBIOSCIENCES_URL}'
-  installer_sha256='{INSTALLER_SHA256}'
-  archive_sha256='{ARCHIVE_SHA256}'
-  dist_commit='{DIST_COMMIT}'
+  org_release_url='https://github.com/Livemore-Biosciences/livemorebio-releases/releases/tag/v0.1.0'
+  livemorebiosciences_url='https://livemorebiosciences.com/releases/0.1.0'
+  installer_sha256='e1f110a227ced5c5c0c2a050899b80111043ec2546cc5adef5a180b6ca14d605'
+  archive_sha256='9e258c12bb2313f082124879dad5e51780dc1afe2e4a18be3bf9b834eaa85d1b'
+  dist_commit='4c0e7cdeeb5dacce2a70ef28eaa63aeb3e8496d6'
   [[ $org_release_url == https://github.com/Livemore-Biosciences/*/releases/* && $org_release_url != *'{'* && $org_release_url != *'}'* ]] || { printf '%s\n' 'Set the Livemore-Biosciences GitHub release URL.' >&2; exit 1; }
   [[ $livemorebiosciences_url == https://livemorebiosciences.com/* && $livemorebiosciences_url != *'{'* && $livemorebiosciences_url != *'}'* ]] || { printf '%s\n' 'Set the livemorebiosciences.com release page URL.' >&2; exit 1; }
   [[ $installer_sha256 =~ ^[0-9a-fA-F]{64}$ && $archive_sha256 =~ ^[0-9a-fA-F]{64}$ ]] || { printf '%s\n' 'Set both published SHA-256 digests.' >&2; exit 1; }
