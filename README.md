@@ -1,3 +1,5 @@
+> **Fidelity advisory (10 November 2026).** Most values Livemore Bio 0.1.0 calculates about biology are withdrawn. Read [ADVISORY-2026-11-10.md](ADVISORY-2026-11-10.md) before using any 0.1.0 result.
+
 <div align="center">
 
 <img src="docs/assets/livemore-bio-banner.png" alt="Livemore Bio by Livemore Health & Biosciences: individualized digital twins (Aegle), a measurement plane (LIFE) and an experiment lab (Cendos)" width="100%">
